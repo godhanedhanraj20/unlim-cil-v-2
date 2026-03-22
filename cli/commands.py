@@ -7,7 +7,7 @@ import os
 from services.auth import interactive_login, get_authenticated_client
 from services.file_service import upload_file, list_files, download_file, delete_file, search_files
 from utils.errors import TSGError
-from utils.metadata_manager import add_tag, remove_tag, get_tags, set_custom_name, remove_custom_name, METADATA_FILE
+from utils.metadata_manager import add_tag, remove_tag, get_tags, set_custom_name, remove_custom_name, METADATA_FILE, set_path, get_path, normalize_path
 import shutil
 import json
 
@@ -60,6 +60,7 @@ def list_cmd(
     limit: int = typer.Option(50, "--limit", "-l", help="Number of files to list (max 200)"),
     sort: str = typer.Option(None, "--sort", help="Sort by: date, size, name"),
     tag: str = typer.Option(None, "--tag", help="Filter files by tag (virtual folder)"),
+    path: str = typer.Option(None, "--path", help="Filter files by virtual path prefix"),
     page: int = typer.Option(1, "--page", help="Page number"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug mode")
 ):
@@ -74,7 +75,7 @@ def list_cmd(
                 raise TSGError("Invalid sort. Use: date, size, name")
                 
             console.print("[cyan]Fetching files...[/cyan]")
-            files = await list_files(client, limit, sort_by=sort, tag=tag, page=page, debug=debug)
+            files = await list_files(client, limit, sort_by=sort, tag=tag, path=path, page=page, debug=debug)
             
             if not files:
                 console.print("[yellow]No files found.[/yellow]")
@@ -83,8 +84,14 @@ def list_cmd(
                 console.print("  search --tag anime")
                 return
 
+            title_parts = []
             if tag:
-                title = f"Files (Folder: {tag}) - Page {page}"
+                title_parts.append(f"Tag: {tag}")
+            if path:
+                title_parts.append(f"Path: {normalize_path(path)}")
+
+            if title_parts:
+                title = f"Files ({', '.join(title_parts)}) - Page {page}"
             else:
                 title = f"Stored Files (Page {page})"
             table = Table(title=title)
@@ -127,6 +134,7 @@ def search(
     file_type: str = typer.Option(None, "--type", "-t", help="Filter by file type (video, image, document, audio)"),
     sort: str = typer.Option(None, "--sort", help="Sort by: date, size, name"),
     tag: str = typer.Option(None, "--tag", help="Filter by tag"),
+    path: str = typer.Option(None, "--path", help="Filter files by virtual path prefix"),
     page: int = typer.Option(1, "--page", help="Page number"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug mode")
 ):
@@ -137,7 +145,7 @@ def search(
             if page < 1:
                 raise TSGError("Page must be >= 1")
                 
-            if not query and not tag and not file_type:
+            if not query and not tag and not file_type and not path:
                 console.print("[yellow]Available commands:[/yellow]")
                 console.print("  login")
                 console.print("  upload <file>")
@@ -162,11 +170,13 @@ def search(
                 msg_parts.append(f"query '{trimmed_query}'")
             if tag:
                 msg_parts.append(f"tag '{tag}'")
+            if path:
+                msg_parts.append(f"path '{normalize_path(path)}'")
             if ft:
                 msg_parts.append(f"type '{ft}'")
             console.print(f"[cyan]Searching files for {' and '.join(msg_parts)}...[/cyan]")
             
-            files = await search_files(client, trimmed_query, limit, file_type=ft, sort_by=sort, tag=tag, page=page, debug=debug)
+            files = await search_files(client, trimmed_query, limit, file_type=ft, sort_by=sort, tag=tag, path=path, page=page, debug=debug)
             
             if not files:
                 console.print("[yellow]No files found.[/yellow]")
@@ -175,15 +185,20 @@ def search(
                 console.print("  search --tag anime")
                 return
 
-            if trimmed_query and tag:
-                title = f"Search Results (Query + Tag) - Page {page}"
-            elif tag and not trimmed_query:
-                title = f"Files (Tag: {tag}) - Page {page}"
-            else:
-                title = f"Search Results: '{trimmed_query}' - Page {page}"
-
+            title_parts = []
+            if trimmed_query:
+                title_parts.append(f"Query: '{trimmed_query}'")
+            if tag:
+                title_parts.append(f"Tag: {tag}")
+            if path:
+                title_parts.append(f"Path: {normalize_path(path)}")
             if ft:
-                title += f" (Type: {ft})"
+                title_parts.append(f"Type: {ft}")
+
+            if title_parts:
+                title = f"Search Results ({', '.join(title_parts)}) - Page {page}"
+            else:
+                title = f"Search Results - Page {page}"
 
             table = Table(title=title)
             table.add_column("ID", justify="left", style="cyan", no_wrap=True)
@@ -200,6 +215,30 @@ def search(
             await client.disconnect()
         
     run_async(_search())
+
+@app.command()
+def move(
+    file_id: int = typer.Argument(..., help="ID of the file to move"),
+    path: str = typer.Option(..., "--path", help="The destination path (e.g., /anime/naruto/)")
+):
+    """Move a file to a virtual folder path."""
+    async def _move():
+        client = await get_authenticated_client()
+        try:
+            # We must verify the file exists by requesting it.
+            # get_messages on a single ID returns a single message
+            message = await client.get_messages("me", file_id)
+            if not message or getattr(message, "empty", False):
+                console.print(f"[red]File with ID {file_id} not found.[/red]")
+                raise typer.Exit(1)
+
+            norm_path = normalize_path(path)
+            set_path(str(file_id), norm_path)
+            console.print(f"[green]File {file_id} moved to {norm_path}[/green]")
+        finally:
+            await client.disconnect()
+
+    run_async(_move())
 
 @app.command()
 def tag(

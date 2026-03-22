@@ -1,5 +1,5 @@
 import pytest
-from tests.test_filters import search_files_logic
+from .test_filters import search_files_logic
 
 def test_full_flow():
     files = [

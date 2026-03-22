@@ -1,4 +1,4 @@
-from utils.metadata_manager import get_tags, get_custom_name
+from utils.metadata_manager import get_tags, get_custom_name, get_path
 
 def format_size(size_bytes: int) -> str:
     if size_bytes == 0:
@@ -74,6 +74,7 @@ def extract_message_metadata(message):
     formatted_tags = ", ".join(clean_tags) if clean_tags else "-"
 
     caption = getattr(message, "caption", "") or ""
+    path = get_path(str(message.id))
 
     return {
         "id": message.id,
@@ -82,5 +83,6 @@ def extract_message_metadata(message):
         "date": date,
         "tags": formatted_tags,
         "raw_size": file_size,
-        "caption": caption
+        "caption": caption,
+        "path": path
     }

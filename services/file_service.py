@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from pyrogram import Client
 from utils.parser import extract_message_metadata, format_size
 from utils.errors import TSGError
-from utils.metadata_manager import get_custom_name
+from utils.metadata_manager import get_custom_name, normalize_path
 
 async def upload_file(client: Client, file_path: str) -> Dict[str, Any]:
     abs_path = os.path.abspath(file_path)
@@ -62,7 +62,7 @@ def _is_internal_file(metadata: Dict[str, Any]) -> bool:
     caption = metadata.get("caption", "")
     return name == "metadata_backup.json" or "#TSG_METADATA_BACKUP" in caption
 
-async def list_files(client: Client, limit: int = 50, sort_by: str = None, tag: str = None, page: int = 1, debug: bool = False) -> List[Dict[str, Any]]:
+async def list_files(client: Client, limit: int = 50, sort_by: str = None, tag: str = None, path: str = None, page: int = 1, debug: bool = False) -> List[Dict[str, Any]]:
     # Enforce max limit = 200
     if limit > 200:
         limit = 200
@@ -71,9 +71,11 @@ async def list_files(client: Client, limit: int = 50, sort_by: str = None, tag: 
     end = start + limit
         
     tag = tag.lower().strip() if tag else None
+    if path is not None:
+        path = normalize_path(path)
     
     if debug:
-        print(f"[DEBUG] list_files filters: tag='{tag}', sort_by='{sort_by}', limit={limit}, page={page}")
+        print(f"[DEBUG] list_files filters: tag='{tag}', path='{path}', sort_by='{sort_by}', limit={limit}, page={page}")
 
     files = []
     try:
@@ -87,6 +89,12 @@ async def list_files(client: Client, limit: int = 50, sort_by: str = None, tag: 
                 # Hide internal files
                 if _is_internal_file(metadata):
                     continue
+
+                # Path-based filtering
+                if path is not None:
+                    file_path = metadata.get("path", "/")
+                    if not file_path.startswith(path):
+                        continue
 
                 # Tag-based filtering (virtual folders)
                 if tag:
@@ -208,7 +216,7 @@ def _matches_type(file_name: str, file_type: str) -> bool:
         return ext in ["mp3", "wav", "ogg", "flac"]
     return False
 
-async def search_files(client: Client, query: str, limit: int = 50, file_type: str = None, sort_by: str = None, tag: str = None, page: int = 1, debug: bool = False) -> List[Dict[str, Any]]:
+async def search_files(client: Client, query: str, limit: int = 50, file_type: str = None, sort_by: str = None, tag: str = None, path: str = None, page: int = 1, debug: bool = False) -> List[Dict[str, Any]]:
     # Enforce max limit = 200
     if limit > 200:
         limit = 200
@@ -219,9 +227,11 @@ async def search_files(client: Client, query: str, limit: int = 50, file_type: s
     query = query.strip().lower() if query else None
     tag = tag.strip().lower() if tag else None
     file_type = file_type.strip().lower() if file_type else None
+    if path is not None:
+        path = normalize_path(path)
         
     if debug:
-        print(f"[DEBUG] search_files filters: query='{query}', tag='{tag}', file_type='{file_type}', sort_by='{sort_by}', limit={limit}, page={page}")
+        print(f"[DEBUG] search_files filters: query='{query}', tag='{tag}', path='{path}', file_type='{file_type}', sort_by='{sort_by}', limit={limit}, page={page}")
 
     files = []
     try:
@@ -242,6 +252,12 @@ async def search_files(client: Client, query: str, limit: int = 50, file_type: s
             # Hide internal files
             if _is_internal_file(metadata):
                 continue
+
+            # AND logic: Path-based filtering
+            if path is not None:
+                file_path = metadata.get("path", "/")
+                if not file_path.startswith(path):
+                    continue
 
             # AND logic: Name-based filtering
             if query and query not in file_name:
