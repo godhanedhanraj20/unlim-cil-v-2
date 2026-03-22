@@ -64,3 +64,52 @@ def remove_custom_name(file_id: str):
     if file_id in data and "custom_name" in data[file_id]:
         del data[file_id]["custom_name"]
         save_metadata(data)
+
+def normalize_path(path: str) -> str:
+    """
+    Normalizes a virtual folder path.
+    - Trims spaces and converts to lowercase
+    - Ensures leading and trailing '/'
+    - Collapses duplicate slashes
+    - Treats empty, None, or whitespace as '/'
+    """
+    if not path or not str(path).strip():
+        return "/"
+
+    path = str(path).strip().lower()
+
+    parts = [p.strip() for p in path.split("/") if p.strip()]
+    if not parts:
+        return "/"
+
+    return "/" + "/".join(parts) + "/"
+
+def set_path(file_id: str, path: str):
+    data = load_metadata()
+    entry = data.setdefault(file_id, {})
+    entry["path"] = normalize_path(path)
+    save_metadata(data)
+
+def get_path(file_id: str) -> str:
+    data = load_metadata()
+    return normalize_path(data.get(file_id, {}).get("path"))
+
+def move_path(file_id: str, new_path: str):
+    set_path(file_id, new_path)
+
+def get_all_folders() -> list:
+    data = load_metadata()
+    folders = set()
+
+    for entry in data.values():
+        path = normalize_path(entry.get("path"))
+        if path == "/":
+            continue
+
+        parts = [p for p in path.split("/") if p]
+        current_path = ""
+        for part in parts:
+            current_path += f"/{part}"
+            folders.add(current_path + "/")
+
+    return sorted(list(folders))
